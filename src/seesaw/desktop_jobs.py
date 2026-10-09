@@ -11,6 +11,63 @@ from seesaw.profiles import printer_by_id
 from seesaw.scene import check_placement, scene_mesh
 
 
+def slice_project(project, root, cancel, progress, smart_preflight=False):
+    root = Path(root)
+    if project.settings is None:
+        raise ValueError("Enter explicit resin exposure settings first.")
+    project.verify_source()
+    mesh, _ = load_stl(project.model_path)
+    project.verify_source()
+    prepared = scene_mesh(mesh, project)
+    printer = printer_by_id(project.printer_id)
+    check_placement(prepared, printer.build_mm)
+    if any(t.translation_mm[2] for t in (project.transform, *project.copies)):
+        raise ValueError("Individual Z offsets are unsupported; keep copies on the bed.")
+    root.mkdir(parents=True, exist_ok=False)
+    source = root / "prepared.stl"
+    prepared.export(source)
+    if cancel.is_set():
+        raise PipelineError("Job cancelled.")
+    directory = root / "pipeline"
+    center = prepared.bounds.mean(axis=0)[:2] + [value / 2 for value in printer.build_mm[:2]]
+    if printer.technology == "resin":
+        from seesaw.hollowing import placed_holes
+
+        holes = tuple(
+            h
+            for transform in (project.transform, *project.copies)
+            for h in placed_holes(mesh, transform, project.hollowing.holes)
+        )
+        manifest = run_pipeline(
+            source,
+            directory,
+            project.settings,
+            cancel,
+            progress,
+            center=center,
+            repair_single_pixels=project.repair_single_pixels,
+            hollowing=project.hollowing,
+            drain_holes=holes,
+            reject_large_islands_early=smart_preflight,
+        )
+    else:
+        from seesaw.fdm import run_fdm
+
+        manifest = run_fdm(source, directory, project.settings, center, cancel, progress)
+    manifest.update(
+        printer_profile={"id": printer.id, "revision": printer.revision},
+        material_profile=project.material.to_dict() if project.material else None,
+        project_inputs=project.to_dict(),
+    )
+    import json
+
+    (directory / "manifest.json").write_text(json.dumps(manifest, indent=2))
+    if cancel.is_set():
+        raise PipelineError("Job cancelled.")
+    project.verify_source()
+    return directory, manifest
+
+
 class SliceWorker(QThread):
     progress = Signal(str)
     succeeded = Signal(object, object)
@@ -24,59 +81,9 @@ class SliceWorker(QThread):
 
     def run(self):
         try:
-            project = self.project
-            if project.settings is None:
-                raise ValueError("Enter explicit resin exposure settings first.")
-            project.verify_source()
-            mesh, _ = load_stl(project.model_path)
-            project.verify_source()
-            prepared = scene_mesh(mesh, project)
-            printer = printer_by_id(project.printer_id)
-            check_placement(prepared, printer.build_mm)
-            if any(t.translation_mm[2] for t in (project.transform, *project.copies)):
-                raise ValueError("Individual Z offsets are unsupported; keep copies on the bed.")
-            self.root.mkdir(parents=True, exist_ok=False)
-            source = self.root / "prepared.stl"
-            prepared.export(source)
-            if self.cancel.is_set():
-                raise PipelineError("Job cancelled.")
-            directory = self.root / "pipeline"
-            center = prepared.bounds.mean(axis=0)[:2] + [
-                value / 2 for value in printer.build_mm[:2]
-            ]
-            if printer.technology == "resin":
-                from seesaw.hollowing import placed_holes
-
-                holes = tuple(h for transform in (project.transform, *project.copies)
-                              for h in placed_holes(mesh, transform, project.hollowing.holes))
-                manifest = run_pipeline(
-                    source,
-                    directory,
-                    project.settings,
-                    self.cancel,
-                    self.progress.emit,
-                    center=center,
-                    repair_single_pixels=project.repair_single_pixels,
-                    hollowing=project.hollowing,
-                    drain_holes=holes,
-                )
-            else:
-                from seesaw.fdm import run_fdm
-
-                manifest = run_fdm(
-                    source, directory, project.settings, center, self.cancel, self.progress.emit
-                )
-            manifest.update(
-                printer_profile={"id": printer.id, "revision": printer.revision},
-                material_profile=project.material.to_dict() if project.material else None,
-                project_inputs=project.to_dict(),
+            directory, manifest = slice_project(
+                self.project, self.root, self.cancel, self.progress.emit
             )
-            import json
-
-            (directory / "manifest.json").write_text(json.dumps(manifest, indent=2))
-            if self.cancel.is_set():
-                raise PipelineError("Job cancelled.")
-            project.verify_source()
             self.succeeded.emit(directory, manifest)
         except Exception as exc:
             self.failed.emit(str(exc))
@@ -123,3 +130,21 @@ class ExportWorker(QThread):
             self.succeeded.emit(str(self.destination))
         except Exception as exc:
             self.failed.emit(str(exc))
+
+
+class SmartSliceWorker(SliceWorker):
+    succeeded = Signal(object, object, object)
+    diagnostic_failed = Signal(str, object)
+
+    def run(self):
+        from seesaw.smart import SmartSliceError, run_smart
+
+        try:
+            directory, manifest, selected = run_smart(
+                self.project, self.root, self.cancel, self.progress.emit
+            )
+            self.succeeded.emit(directory, manifest, selected)
+        except SmartSliceError as exc:
+            self.diagnostic_failed.emit(str(exc), exc.directory)
+        except Exception as exc:
+            self.diagnostic_failed.emit(str(exc), None)

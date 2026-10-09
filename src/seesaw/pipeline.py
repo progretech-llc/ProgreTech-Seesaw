@@ -278,8 +278,13 @@ def run_pipeline(
     repair_single_pixels=False,
     hollowing=None,
     drain_holes=(),
+    reject_large_islands_early=False,
 ):
     settings.validate()
+    if type(reject_large_islands_early) is not bool:
+        raise PipelineError("Preflight choice must be boolean.")
+    if reject_large_islands_early and not repair_single_pixels:
+        raise PipelineError("Smart preflight requires verified singleton repair.")
     if type(repair_single_pixels) is not bool:
         raise PipelineError("Repair choice must be boolean.")
     model = model.resolve(strict=True)
@@ -388,11 +393,14 @@ def run_pipeline(
         if not settings.bottom_layers < count <= 512:
             raise PipelineError("Job needs normal layers after bottom layers (max 512 total).")
         manifest["layer_count"] = count
-        if repair_single_pixels:
+        if repair_single_pixels or reject_large_islands_early:
             from seesaw.issues import parse_islands, repair_properties, verify_repair
 
             report = execute("repair-findings", [uv, "print-issues", sl1, "--islands"])
             islands = parse_islands(report, count)
+            if reject_large_islands_early and any(i.pixels > 1 for i in islands):
+                (directory / "issues.log").write_text(report)
+                raise PipelineError("UVTools reported issues: unsupported islands remain.")
             singletons = [i for i in islands if i.pixels == i.width == i.height == 1]
             if len(singletons) > 64:
                 raise PipelineError("More than 64 singleton islands; change geometry or supports.")
