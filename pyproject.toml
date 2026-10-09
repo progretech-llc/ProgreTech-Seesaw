@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "progretech-seesaw"
-version = "0.4.0"
+version = "0.5.0"
 description = "Offline Ubuntu resin slicing and calibration workflow"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -17,8 +17,8 @@ dependencies = [
 
 [project.urls]
 Homepage = "https://progretech.com"
-Repository = "https://github.com/eabdiel/ProgreTech-Seesaw"
-Issues = "https://github.com/eabdiel/ProgreTech-Seesaw/issues"
+Repository = "https://github.com/progretech-llc/ProgreTech-Seesaw"
+Issues = "https://github.com/progretech-llc/ProgreTech-Seesaw/issues"
 
 [project.optional-dependencies]
 desktop = ["PySide6-Essentials>=6.8,<7", "pyvista>=0.46,<0.48", "pyvistaqt>=0.11,<0.12"]

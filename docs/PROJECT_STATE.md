@@ -2,9 +2,9 @@
 
 The Python core now stores a single local STL reference, SHA-256, immutable transform,
 explicit resin or filament settings, printer identity/revision and an immutable material
-profile snapshot in version-3 JSON. Up to 31 additional independently transformed
-copies share the source hash. Version-1/2 projects migrate on reading; reopening never
-restores export readiness. The 0.3.1 desktop uses this API throughout.
+profile snapshot and typed hollow/drain parameters in version-4 JSON. Up to 31 additional independently transformed
+copies share the source hash. Version-1/2/3 projects migrate with hollowing disabled; reopening never
+restores export readiness. The 0.5.0 desktop uses this API throughout.
 
 `Project.from_stl_path(path, settings=...)` records source identity; geometry inspection
 still belongs to `model.load_stl`. `save_project` writes a unique temporary file, flushes

@@ -203,7 +203,12 @@ def run_fdm(model, directory, settings, center, cancel=None, progress=lambda _: 
         "extension": ".gcode",
     }
     try:
-        version = run_process(["prusa-slicer", "--help"], directory / "version.log", cancel)
+        from seesaw.engines import resolve
+
+        prusa = resolve()["prusa_slicer"]
+        if not prusa:
+            raise PipelineError("Slicer unavailable; reinstall the Seesaw bundle.")
+        version = run_process([prusa, "--help"], directory / "version.log", cancel)
         if not re.match(r"^PrusaSlicer-2\.9\.4(?:[+ -]|$)", version):
             raise PipelineError("Filament adapter requires PrusaSlicer 2.9.4.")
         ini = directory / "generated.ini"
@@ -211,7 +216,7 @@ def run_fdm(model, directory, settings, center, cancel=None, progress=lambda _: 
         progress("slice-filament")
         run_process(
             [
-                "prusa-slicer",
+                prusa,
                 "--datadir",
                 str(directory / "config"),
                 "--load",

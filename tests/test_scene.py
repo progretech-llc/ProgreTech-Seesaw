@@ -60,7 +60,7 @@ def test_copies_and_printer_invalidate_job_and_roundtrip(tmp_path):
 def test_legacy_project_migration_and_revision_rejection(tmp_path):
     _, p = project(tmp_path)
     data = p.to_dict()
-    for name in ("copies", "material", "printer_revision", "repair_single_pixels"):
+    for name in ("copies", "material", "printer_revision", "repair_single_pixels", "hollowing"):
         del data[name]
     data["schema"] = "version1"
     restored = Project.from_dict(data)
@@ -79,7 +79,7 @@ def test_repair_choice_is_versioned_and_invalidates_job(tmp_path):
     assert Project.from_dict(edited.to_dict()).repair_single_pixels
     old = p.to_dict()
     old["schema"] = "version2"
-    del old["repair_single_pixels"]
+    del old["repair_single_pixels"], old["hollowing"]
     assert not Project.from_dict(old).repair_single_pixels
     with pytest.raises(ValueError):
         p.edited(repair_single_pixels=1)

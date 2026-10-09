@@ -349,6 +349,7 @@ class Window(WorkspaceControls, QMainWindow):
             self.bottom_exposure,
             self.supports,
             self.pixel_repair,
+            self.hollow_button,
             self.slice,
             self.printer_box,
             self.material_box,

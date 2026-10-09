@@ -36,7 +36,11 @@ supports, actual layer preview and verified export are integrated. The named ctr
 sample is bundled unchanged with attribution. The first FDM adapter (MK3S/PLA) is
 software-tested. See `WORKSPACE_0_3.md`.
 
-Remaining M2 work: automatic orientation, hollowing/drain-hole editing, broader
+0.5.0 integrates native hollowing/drain editing with typed source coordinates,
+undo/persistence, actual layers and cavity export gates, and bundles baseline engines.
+See `SINGLE_APP_0_5.md`.
+
+Remaining M2 work: automatic orientation, broader
 Ubuntu/Wayland trials and large-job profiling. Physical qualification remains M3.
 
 - Editable transforms, undo, copies, supports/hollowing/holes and profile selection.

@@ -19,7 +19,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-REPOSITORY = "eabdiel/ProgreTech-Seesaw"
+REPOSITORY = "progretech-llc/ProgreTech-Seesaw"
 API_URL = f"https://api.github.com/repos/{REPOSITORY}/releases/latest"
 MAX_PACKAGE = 2 * 1024**3
 ALLOWED_HOSTS = {
