@@ -20,6 +20,25 @@ def builtins():
             {},
             provenance="Owner's material; exact SKU/exposures unset",
         ),
+        MaterialProfile(
+            "anycubic-water-wash-plus-mono4",
+            "Anycubic Water-Wash Resin+ — manufacturer reference",
+            "resin",
+            "mono4",
+            {"exposure_s": 3.0, "bottom_exposure_s": 30.0},
+            provenance="Anycubic Mono4 Water Wash Resin+ table, retrieved2026-10-09; "
+            "starting exposures, not calibration; eu.anycubic.com/pages/"
+            "resin-settings-for-anycubic-photon-series-3d-printer",
+        ),
+        MaterialProfile(
+            "anycubic-water-wash-2-mono4",
+            "Anycubic Water-Wash Resin 2.0 — manufacturer reference (0.05 mm)",
+            "resin",
+            "mono4",
+            {"exposure_s": 2.8, "bottom_exposure_s": 30.0, "layer_mm": 0.05},
+            provenance="Anycubic Water-Wash Resin2.0 Mono4 table, retrieved2026-10-09; "
+            "starting exposures, not calibration; store.anycubic.com/pages/resin-user-manual",
+        ),
         MaterialProfile("custom-resin", "Custom resin (enter settings)", "resin", "mono4", {}),
         MaterialProfile(
             "generic-pla",
@@ -102,3 +121,23 @@ def catalog():
         except (OSError, ValueError, TypeError) as exc:
             errors.append(f"{path.name}: {exc}")
     return result, errors
+
+
+def resolve_exposures(material, template, normal, bottom, auto):
+    """Resolve Auto from an explicit local profile, never infer an exposure."""
+    from dataclasses import replace
+
+    values = [normal, bottom]
+    for index, key in enumerate(("exposure_s", "bottom_exposure_s")):
+        if auto[index]:
+            if material is None or material.technology != "resin":
+                return None
+            reference_layer = material.parameters.get("layer_mm", 0.05)
+            if abs(template.layer_mm - reference_layer) > 1e-9:
+                return None
+            values[index] = material.parameters.get(key, 0)
+    if any(value < 0.1 for value in values):
+        return None
+    result = replace(template, exposure_s=values[0], bottom_exposure_s=values[1])
+    result.validate()
+    return result

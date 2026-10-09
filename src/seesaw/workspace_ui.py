@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pyvista as pv
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -23,7 +24,13 @@ from PySide6.QtWidgets import (
 
 from seesaw.fdm_settings import FDMSettings
 from seesaw.hollowing import Hollowing
-from seesaw.material_store import catalog, read_material, save_material, settings_for
+from seesaw.material_store import (
+    catalog,
+    read_material,
+    resolve_exposures,
+    save_material,
+    settings_for,
+)
 from seesaw.pipeline import Settings
 from seesaw.profiles import PRINTERS, MaterialProfile, materials_for_printer, printer_by_id
 from seesaw.project import Transform
@@ -40,9 +47,9 @@ class WorkspaceControls:
                 "1. Add an STL or Load test file. STL coordinates are interpreted as "
                 "millimetres.\n\n"
                 "2. Select your exact printer and a matching material profile. Resin "
-                "exposure values "
-                "start unset. Enter settings calibrated for your bottle, then Save profile "
-                "for reuse. "
+                "Auto exposure uses the profile's saved values at its layer height. "
+                "Manufacturer references are starting values, not calibrated for your bottle. "
+                "Type a positive number for manual exposure; Save profile for reuse. "
                 "Filament starting temperatures come from the bundled Prusa PLA profile; "
                 "check your spool.\n\n"
                 "3. Select a model copy, move X/Y, rotate or scale, then Apply transform. "
@@ -178,6 +185,11 @@ class WorkspaceControls:
             available.append(selected)
         for material in available:
             self.material_box.addItem(material.name, material)
+            self.material_box.setItemData(
+                self.material_box.count() - 1,
+                material.name + "\n" + material.provenance,
+                Qt.ItemDataRole.ToolTipRole,
+            )
         if selected:
             for index, profile in enumerate(available):
                 if profile.to_dict() == selected.to_dict():
@@ -188,9 +200,9 @@ class WorkspaceControls:
     def update_technology(self):
         printer = self.selected_printer()
         resin = printer.technology == "resin"
-        for spin in (self.exposure, self.bottom_exposure):
-            spin.setVisible(resin)
-            self.exposure_form.labelForField(spin).setVisible(resin)
+        for field in self.exposure_fields:
+            field.setVisible(resin)
+            self.exposure_form.labelForField(field).setVisible(resin)
         self.filament_panel.setVisible(not resin)
         self.advanced.setVisible(resin)
         self.supports.setText("Generate supports and raft" if resin else "Generate supports")
@@ -203,6 +215,7 @@ class WorkspaceControls:
 
         self.pixel_repair.setVisible(printer.technology == "resin")
         self.hollow_button.setVisible(resin)
+        self.test_button.setText("Load resin test" if resin else "Load FDM test")
         self.setWindowTitle(f"ProgreTech Seesaw {__version__} — {printer.name}")
 
     def printer_changed(self):
@@ -222,12 +235,14 @@ class WorkspaceControls:
             return
         if self.project is not None:
             self.project = self.project.edited(
-                hollowing=(self.project.hollowing if material.technology == "resin"
-                           else Hollowing()),
+                hollowing=(
+                    self.project.hollowing if material.technology == "resin" else Hollowing()
+                ),
                 printer_id=material.printer_id,
                 printer_revision=self.selected_printer().revision,
                 material=material,
                 settings=settings_for(material),
+                auto_exposure=(material.technology == "resin",) * 2,
                 repair_single_pixels=(
                     self.project.repair_single_pixels if material.technology == "resin" else False
                 ),
@@ -236,11 +251,17 @@ class WorkspaceControls:
             self.sync_controls()
 
     def load_test_file(self):
-        self.import_model(Path(__file__).parent / "assets/test-model/ctrlV_3D_test.stl")
-        self.status.setText(
-            "Loading original test by ctrlV • CC Attribution–No Derivatives • "
-            "Demanding geometry test; not a resin exposure calibration."
-        )
+        if self.selected_printer().technology == "resin":
+            self.import_model(Path(__file__).parent / "assets/resin-test/geometry.stl")
+            self.status.setText(
+                "Loading small solid resin geometry test; not an exposure calibration matrix."
+            )
+        else:
+            self.import_model(Path(__file__).parent / "assets/test-model/ctrlV_3D_test.stl")
+            self.status.setText(
+                "Loading original FDM test by ctrlV • "
+                "CC Attribution–No Derivatives • Demanding geometry test."
+            )
 
     def show_model(self, mesh, info):
         self.project = self.worker.project
@@ -251,7 +272,10 @@ class WorkspaceControls:
         if not self.worker.project_file:
             material = self.material_box.currentData()
             self.project = self.project.edited(
-                printer_id=material.printer_id, material=material, settings=settings_for(material)
+                printer_id=material.printer_id,
+                material=material,
+                settings=settings_for(material),
+                auto_exposure=(material.technology == "resin",) * 2,
             )
         self.sync_controls()
         self.render_model()
@@ -281,8 +305,14 @@ class WorkspaceControls:
                 self.settings_template = settings or Settings(
                     **({"exposure_s": 1, "bottom_exposure_s": 1} | partial)
                 )
-                self.exposure.setValue(settings.exposure_s if settings else 0)
-                self.bottom_exposure.setValue(settings.bottom_exposure_s if settings else 0)
+                self.exposure.setValue(
+                    0 if self.project.auto_exposure[0] or settings is None else settings.exposure_s
+                )
+                self.bottom_exposure.setValue(
+                    0
+                    if self.project.auto_exposure[1] or settings is None
+                    else settings.bottom_exposure_s
+                )
             else:
                 for key, spin in self.filament_controls.items():
                     spin.setValue(getattr(settings or FDMSettings(), key))
@@ -302,22 +332,36 @@ class WorkspaceControls:
                 **{k: v.value() for k, v in self.filament_controls.items()},
                 supports=self.supports.isChecked(),
             )
-        elif self.exposure.value() >= 0.1 and self.bottom_exposure.value() >= 0.1:
-            settings = replace(
-                self.project.settings or self.settings_template,
-                exposure_s=self.exposure.value(),
-                bottom_exposure_s=self.bottom_exposure.value(),
-                supports=self.supports.isChecked(),
+        else:
+            template = replace(
+                self.project.settings or self.settings_template, supports=self.supports.isChecked()
             )
-            self.settings_template = settings
-        self.project = self.project.edited(settings=settings)
+            settings = resolve_exposures(
+                self.project.material,
+                template,
+                self.exposure.value(),
+                self.bottom_exposure.value(),
+                (self.exposure.value() == 0, self.bottom_exposure.value() == 0),
+            )
+            self.settings_template = settings or template
+        self.project = self.project.edited(
+            settings=settings,
+            auto_exposure=(
+                (self.exposure.value() == 0, self.bottom_exposure.value() == 0)
+                if self.selected_printer().technology == "resin"
+                else (False, False)
+            ),
+        )
         self.invalidate_result()
         self.update_settings_summary()
 
     def update_settings_summary(self):
         settings = self.project.settings if self.project else None
         if settings is None:
-            text = "Enter calibrated normal and bottom exposure values for this resin."
+            text = (
+                "Auto unavailable: select a material with saved exposures at this layer height, "
+                "or enter manual values. Save your calibrated values as a local material."
+            )
         elif isinstance(settings, FDMSettings):
             text = (
                 f"{settings.layer_mm:g} mm • {settings.nozzle_c:g} °C nozzle"
@@ -325,7 +369,13 @@ class WorkspaceControls:
             )
             text += f"{settings.infill_percent:g}% infill • {settings.speed_mm_s:g} mm/s"
         else:
-            text = f"{settings.layer_mm:g} mm • {settings.bottom_layers} bottom layers\n"
+            text = (
+                f"Normal {settings.exposure_s:g} s"
+                f"{' (Auto)' if self.project.auto_exposure[0] else ''} • "
+                f"Bottom {settings.bottom_exposure_s:g} s"
+                f"{' (Auto)' if self.project.auto_exposure[1] else ''}\n"
+            )
+            text += f"{settings.layer_mm:g} mm • {settings.bottom_layers} bottom layers\n"
             text += f"Lift {settings.lift_mm:g} mm at {settings.lift_mm_min:g} mm/min\n"
             text += f"Retract {settings.retract_mm_min:g} mm/min • Rest {settings.rest_s:g} s"
         self.settings_summary.setText(text + "\nVerify settings for your material and printer.")
@@ -351,7 +401,21 @@ class WorkspaceControls:
             return
         settings = edit_settings(self, self.project.settings)
         if settings is not None:
-            self.project = self.project.edited(settings=settings)
+            resolved = resolve_exposures(
+                self.project.material,
+                settings,
+                settings.exposure_s,
+                settings.bottom_exposure_s,
+                self.project.auto_exposure,
+            )
+            if resolved is None:
+                self.status.setText(
+                    "Auto has no exposure for that layer height. "
+                    "Enter manual exposures before changing it."
+                )
+                return
+            self.settings_template = settings
+            self.project = self.project.edited(settings=resolved)
             self.invalidate_result()
             self.sync_controls()
 
@@ -504,8 +568,9 @@ class WorkspaceControls:
                     start = np.asarray(hole.position_mm)
                     end = start + np.asarray(hole.direction) * hole.depth_mm
                     self.viewport.add_mesh(pv.Line(start, end), color="#ed8a23", line_width=5)
-                    self.viewport.add_mesh(pv.Sphere(radius=hole.radius_mm, center=start),
-                                           color="#ed8a23", opacity=0.5)
+                    self.viewport.add_mesh(
+                        pv.Sphere(radius=hole.radius_mm, center=start), color="#ed8a23", opacity=0.5
+                    )
 
         self.viewport.add_mesh(
             pv.Plane(center=(0, 0, -0.1), i_size=printer.build_mm[0], j_size=printer.build_mm[1]),

@@ -114,6 +114,7 @@ class Project:
     printer_revision: int = 1
     repair_single_pixels: bool = False
     hollowing: Hollowing = Hollowing()
+    auto_exposure: tuple[bool, bool] = (False, False)
 
     def __post_init__(self):
         if not isinstance(self.model_path, Path) or not self.model_path.is_absolute():
@@ -154,7 +155,27 @@ class Project:
             raise ValueError("Invalid hollowing record.")
         if self.hollowing.enabled and printer.technology != "resin":
             raise ValueError("Hollowing is available only for resin printers.")
+        if (
+            type(self.auto_exposure) is not tuple
+            or len(self.auto_exposure) != 2
+            or any(type(v) is not bool for v in self.auto_exposure)
+        ):
+            raise ValueError("Auto exposure must contain two boolean choices.")
+        if any(self.auto_exposure) and printer.technology != "resin":
+            raise ValueError("Auto exposure is only available for resin printers.")
         checked_settings(self.settings)
+        if self.settings is not None and any(self.auto_exposure):
+            from seesaw.material_store import resolve_exposures
+
+            resolved = resolve_exposures(
+                self.material,
+                self.settings,
+                self.settings.exposure_s,
+                self.settings.bottom_exposure_s,
+                self.auto_exposure,
+            )
+            if resolved is None or resolved != self.settings:
+                raise ValueError("Auto exposure does not match the material/layer profile.")
 
     def edited(self, **changes):
         if "revision" in changes:
@@ -167,7 +188,7 @@ class Project:
 
     def to_dict(self):
         return {
-            "schema": "version4",
+            "schema": "version5",
             "model_path": str(self.model_path),
             "model_sha256": self.model_sha256,
             "transform": self.transform.to_dict(),
@@ -179,6 +200,7 @@ class Project:
             "printer_revision": self.printer_revision,
             "repair_single_pixels": self.repair_single_pixels,
             "hollowing": self.hollowing.to_dict(),
+            "auto_exposure": list(self.auto_exposure),
         }
 
     def fingerprint(self):
@@ -227,10 +249,42 @@ class Project:
             )
             data = dict(data, schema="version3", repair_single_pixels=False)
         if type(data) is dict and data.get("schema") == "version3":
-            exact_keys(data, ("schema", "model_path", "model_sha256", "transform", "settings",
-                              "revision", "printer_id", "copies", "material",
-                              "printer_revision", "repair_single_pixels"))
+            exact_keys(
+                data,
+                (
+                    "schema",
+                    "model_path",
+                    "model_sha256",
+                    "transform",
+                    "settings",
+                    "revision",
+                    "printer_id",
+                    "copies",
+                    "material",
+                    "printer_revision",
+                    "repair_single_pixels",
+                ),
+            )
             data = dict(data, schema="version4", hollowing=Hollowing().to_dict())
+        if type(data) is dict and data.get("schema") == "version4":
+            exact_keys(
+                data,
+                (
+                    "schema",
+                    "model_path",
+                    "model_sha256",
+                    "transform",
+                    "settings",
+                    "revision",
+                    "printer_id",
+                    "copies",
+                    "material",
+                    "printer_revision",
+                    "repair_single_pixels",
+                    "hollowing",
+                ),
+            )
+            data = dict(data, schema="version5", auto_exposure=[False, False])
         exact_keys(
             data,
             (
@@ -246,9 +300,10 @@ class Project:
                 "printer_revision",
                 "repair_single_pixels",
                 "hollowing",
+                "auto_exposure",
             ),
         )
-        if data["schema"] != "version4":
+        if data["schema"] != "version5":
             raise ValueError("Unsupported project schema.")
         if type(data["model_path"]) is not str:
             raise ValueError("Model path must be a string.")
@@ -261,6 +316,8 @@ class Project:
             settings = kind(**settings)
         if type(data["copies"]) is not list:
             raise ValueError("Copies must be a list.")
+        if type(data["auto_exposure"]) is not list:
+            raise ValueError("Auto exposure must be an array.")
         return cls(
             Path(data["model_path"]),
             data["model_sha256"],
@@ -273,6 +330,7 @@ class Project:
             data["printer_revision"],
             data["repair_single_pixels"],
             Hollowing.from_dict(data["hollowing"]),
+            tuple(data["auto_exposure"]),
         )
 
     @classmethod

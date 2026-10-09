@@ -1,5 +1,6 @@
-> **0.5.0 preparation:** native hollow/drain editing and one Seesaw installer for
-> Ubuntu 26.04 amd64. See [single-app workflow](docs/SINGLE_APP_0_5.md).
+> **0.5.1 preparation:** native hollow/drain editing and one Seesaw installer for
+> Ubuntu 26.04 amd64. See [single-app workflow](docs/SINGLE_APP_0_5.md) and
+> [Auto exposure and test diagnostics](docs/AUTO_EXPOSURE_0_5_1.md).
 > Physical printer/material acceptance remains separate.
 
 # ProgreTech Seesaw — offline 3D printing software for Ubuntu
@@ -12,7 +13,7 @@ A project of **[ProgreTech LLC](https://progretech.com)**, owned and maintained 
 
 Built by **[ProgreTech](https://progretech.com)** · [Download releases](https://github.com/progretech-llc/ProgreTech-Seesaw/releases) · [Technical specification](docs/TECHNICAL_SPEC.md)
 
-A Python-driven, offline slicing workspace for Ubuntu. **Version 0.5.0** supports
+A Python-driven, offline slicing workspace for Ubuntu. **Version 0.5.1** supports
 software-tested Anycubic Photon Mono 4 resin and Original Prusa i3 MK3S/MK3S+ filament
 workflows. Neither printer/material combination is physically qualified by this project.
 
