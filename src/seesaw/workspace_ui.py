@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from seesaw.fdm_settings import FDMSettings
+from seesaw.hollowing import Hollowing
 from seesaw.material_store import catalog, read_material, save_material, settings_for
 from seesaw.pipeline import Settings
 from seesaw.profiles import PRINTERS, MaterialProfile, materials_for_printer, printer_by_id
@@ -116,6 +117,9 @@ class WorkspaceControls:
             self.filament_controls[key] = spin
             form.addRow(label, spin)
         right.insertWidget(5, self.filament_panel)
+        self.hollow_button = QPushButton("Hollow and drain…")
+        self.hollow_button.clicked.connect(self.edit_hollowing)
+        right.insertWidget(6, self.hollow_button)
         self.pixel_repair = QCheckBox("Remove isolated single pixels")
         self.pixel_repair.setToolTip(
             "Opt-in UVTools repair: removes at most 64 reported one-pixel islands. "
@@ -198,6 +202,7 @@ class WorkspaceControls:
         from seesaw import __version__
 
         self.pixel_repair.setVisible(printer.technology == "resin")
+        self.hollow_button.setVisible(resin)
         self.setWindowTitle(f"ProgreTech Seesaw {__version__} — {printer.name}")
 
     def printer_changed(self):
@@ -217,6 +222,8 @@ class WorkspaceControls:
             return
         if self.project is not None:
             self.project = self.project.edited(
+                hollowing=(self.project.hollowing if material.technology == "resin"
+                           else Hollowing()),
                 printer_id=material.printer_id,
                 printer_revision=self.selected_printer().revision,
                 material=material,
@@ -322,6 +329,21 @@ class WorkspaceControls:
             text += f"Lift {settings.lift_mm:g} mm at {settings.lift_mm_min:g} mm/min\n"
             text += f"Retract {settings.retract_mm_min:g} mm/min • Rest {settings.rest_s:g} s"
         self.settings_summary.setText(text + "\nVerify settings for your material and printer.")
+
+    def edit_hollowing(self):
+        if self.project is None or self.busy():
+            self.status.setText("Import a model before editing hollowing and drains.")
+            return
+        from seesaw.hollowing_ui import edit_hollowing
+
+        self.transform_model()
+        result = edit_hollowing(self, self.project.hollowing)
+        if result is not None and result != self.project.hollowing:
+            self.undo_stack.append(self.project)
+            self.project = self.project.edited(hollowing=result)
+            self.invalidate_result()
+            self.sync_controls()
+            self.render_model()
 
     def edit_advanced(self):
         if self.project is None or self.project.settings is None or self.busy():
@@ -430,7 +452,9 @@ class WorkspaceControls:
         if not self.undo_stack or self.busy():
             return
         old = self.undo_stack.pop()
-        self.project = self.project.edited(transform=old.transform, copies=old.copies)
+        self.project = self.project.edited(
+            transform=old.transform, copies=old.copies, hollowing=old.hollowing
+        )
         self.invalidate_result()
         self.sync_controls()
         self.render_model()
@@ -473,6 +497,16 @@ class WorkspaceControls:
                 edge_color="#25464c",
             )
             self.model_actors.append(actor)
+            if self.project.hollowing.enabled:
+                from seesaw.hollowing import placed_holes
+
+                for hole in placed_holes(self.mesh, transform, self.project.hollowing.holes):
+                    start = np.asarray(hole.position_mm)
+                    end = start + np.asarray(hole.direction) * hole.depth_mm
+                    self.viewport.add_mesh(pv.Line(start, end), color="#ed8a23", line_width=5)
+                    self.viewport.add_mesh(pv.Sphere(radius=hole.radius_mm, center=start),
+                                           color="#ed8a23", opacity=0.5)
+
         self.viewport.add_mesh(
             pv.Plane(center=(0, 0, -0.1), i_size=printer.build_mm[0], j_size=printer.build_mm[1]),
             color="#99a6ad",

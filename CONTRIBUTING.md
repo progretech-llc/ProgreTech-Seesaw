@@ -4,7 +4,7 @@ Maintained by ProgreTech LLC and Ed Rodriguez. Help is welcome with reproducible
 
 ## Start with an issue
 
-Use [the issue tracker](https://github.com/eabdiel/ProgreTech-Seesaw/issues) to describe a bug or propose an improvement. Include your operating system, application version or commit, reproduction steps, expected behavior, and actual result. Use small synthetic examples and sanitized logs; omit credentials, private records, and customer data.
+Use [the issue tracker](https://github.com/progretech-llc/ProgreTech-Seesaw/issues) to describe a bug or propose an improvement. Include your operating system, application version or commit, reproduction steps, expected behavior, and actual result. Use small synthetic examples and sanitized logs; omit credentials, private records, and customer data.
 
 For larger changes, describe the intended behavior and discuss scope before implementation. Do not assume that an idea in the roadmap is already implemented.
 

@@ -276,12 +276,14 @@ def run_pipeline(
     progress=lambda _: None,
     center=None,
     repair_single_pixels=False,
+    hollowing=None,
+    drain_holes=(),
 ):
     settings.validate()
     if type(repair_single_pixels) is not bool:
         raise PipelineError("Repair choice must be boolean.")
     model = model.resolve(strict=True)
-    _, info = load_stl(model)
+    input_mesh, info = load_stl(model)
     if not info.watertight or not info.fits_unrotated:
         raise PipelineError("Research pipeline requires a closed mesh that fits the Mono 4.")
     estimated_layers = math.ceil(
@@ -296,7 +298,9 @@ def run_pipeline(
         raise PipelineError("Insufficient available memory for conservative 10K layer processing.")
     tools = discover()
     if not tools["prusa_slicer"] or not tools["uvtools"]:
-        raise PipelineError("Install PrusaSlicer and UVTools before running backend validation.")
+        raise PipelineError(
+            "Engine bundle unavailable; reinstall Seesaw or configure development engines."
+        )
     directory = directory.resolve()
     directory.mkdir(parents=True, exist_ok=False)
     cancel = cancel or Event()
@@ -329,7 +333,37 @@ def run_pipeline(
             raise PipelineError("This research adapter requires UVTools core 7.0.1.")
         manifest["backends"] = {"prusa": version.splitlines()[0], "uvtools_core": uv_version}
         ini = directory / "generated.ini"
-        ini.write_text(profile_text(settings))
+        config = profile_text(settings)
+        if hollowing is not None and hollowing.enabled:
+            if not drain_holes:
+                raise PipelineError("Hollowing requires transformed drain holes.")
+            config = config.replace("hollowing_enable = 0", "hollowing_enable = 1")
+            config += (f"hollowing_min_thickness = {hollowing.thickness_mm}\n"
+                       "hollowing_quality = 0.5\nhollowing_closing_distance = 0.5\n")
+        ini.write_text(config)
+        slice_source = directory / "model.stl"
+        if hollowing is not None and hollowing.enabled:
+            from dataclasses import replace
+
+            from seesaw.hollowing import add_native_drains
+
+            # Prusa SLA drain records are object coordinates. Its SLA transform does
+            # not apply the volume's centering offset; export a centered mesh so that
+            # volume and object frames coincide, then rebase holes by the same vector.
+            shift = input_mesh.bounds.mean(axis=0)
+            centered_mesh = input_mesh.copy()
+            centered_mesh.vertices -= shift
+            centered_source = directory / "centered.stl"
+            centered_mesh.export(centered_source)
+            native_holes = tuple(replace(h, position_mm=tuple(
+                float(v) for v in np.asarray(h.position_mm) - shift)) for h in drain_holes)
+            slice_source = directory / "prepared.3mf"
+            execute("drain-interchange", [prusa, "--datadir", directory / "prusa-config",
+                                          "--load", ini, "--export-3mf", "--output", slice_source,
+                                          centered_source])
+            add_native_drains(slice_source, native_holes,
+                              expected_z=-float(centered_mesh.bounds[0, 2]))
+            manifest["hollowing"] = hollowing.to_dict()
         sl1 = directory / "layers.sl1"
         execute(
             "slice",
@@ -344,7 +378,7 @@ def run_pipeline(
                 f"{center[0]},{center[1]}" if center is not None else "76.704,43.52",
                 "--output",
                 sl1,
-                directory / "model.stl",
+                slice_source,
             ],
         )
         if not sl1.is_file():
@@ -420,6 +454,8 @@ def run_pipeline(
                 "--islands",
                 "--touching-bounds",
                 "--print-height",
+                *( ["--resin-traps", "--suction-cups"]
+                   if hollowing is not None and hollowing.enabled else [] ),
                 "--empty-layers",
             ],
         )

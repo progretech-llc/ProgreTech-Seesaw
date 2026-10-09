@@ -30,6 +30,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--engines", type=Path, required=True)
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     os.chdir(repo)
@@ -46,6 +47,10 @@ def main():
     stage.mkdir(parents=True)
     args.output.mkdir(parents=True, exist_ok=True)
     runtime = stage / "opt/progretech-seesaw"
+    from seesaw.engines import bundled
+
+    bundled(args.engines)
+    shutil.copytree(args.engines, runtime / "engines")
     python_root = Path(sys.base_prefix)
     shutil.copytree(python_root, runtime / "python", symlinks=True)
     # Prevent ambient packages or a working directory from altering the installed application.
@@ -146,7 +151,7 @@ def main():
     write(docs / "python-dependencies.json", json.dumps(inventory, indent=2) + "\n")
     shutil.copy2(lock, docs / "requirements-desktop.txt")
     deps = (
-        "libc6 (>= 2.35), libstdc++6, libgl1, libegl1, libopengl0, libgomp1, "
+        "libc6 (>= 2.43), libicu78, libssl3t64, libstdc++6, libgl1, libegl1, libopengl0, libgomp1, "
         "libx11-6, libxext6, libxrender1, libxcb1, libxcb-cursor0, libxcb-icccm4, "
         "libxcb-image0, libxcb-keysyms1, libxcb-render-util0, libxcb-xkb1, "
         "libxkbcommon-x11-0, libdbus-1-3, libfontconfig1, libfreetype6, libsm6, "
@@ -163,10 +168,10 @@ Architecture: amd64
 Maintainer: ProgreTech Seesaw <eabdiel@users.noreply.github.com>
 Installed-Size: {size}
 Depends: {deps}
-Homepage: https://github.com/eabdiel/ProgreTech-Seesaw
+Homepage: https://github.com/progretech-llc/ProgreTech-Seesaw
 Description: Offline resin and filament slicing workspace for Ubuntu
  Python desktop with preparation, layer preview and explicit GitHub release updates.
- Mono 4 calibration export requires PrusaSlicer 2.9.4 and UVTools 7.0.1.
+ Bundled native PrusaSlicer and UVTools engines run offline without manual tool installs.
  Printer firmware and material settings remain physically unqualified.
 """,
     )

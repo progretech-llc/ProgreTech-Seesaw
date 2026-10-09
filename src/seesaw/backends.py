@@ -1,25 +1,21 @@
 """Backend discovery and research command plans, never an implicit print/export API."""
 
-import os
 import shutil
 from pathlib import Path
 
+from seesaw.engines import resolve
+
 
 def find_uvtools() -> str | None:
-    direct = shutil.which("UVtoolsCmd")
-    packaged = Path("/usr/lib/uvtools/UVtoolsCmd")
-    return direct or (
-        str(packaged) if packaged.is_file() and os.access(packaged, os.X_OK) else None
-    )
+    return resolve()["uvtools"]
 
 
 def discover() -> dict:
     return {
-        "prusa_slicer": shutil.which("prusa-slicer") or shutil.which("PrusaSlicer"),
-        "uvtools": find_uvtools(),
+        **resolve(),
         "mslicer_optional": shutil.which("slicer"),
         "print_ready": False,
-        "note": "PATH discovery only; versions, Flatpak installs and formats are not qualified.",
+        "note": "Bundled installed engines, or development discovery; no physical qualification.",
     }
 
 
@@ -39,7 +35,7 @@ def research_plan(model: Path, profile: Path, work_dir: Path) -> list[list[str]]
     uvtools = find_uvtools() or "UVtoolsCmd"
     return [
         [
-            "prusa-slicer",
+            resolve()["prusa_slicer"] or "prusa-slicer",
             "--load",
             str(profile.resolve()),
             "--export-sla",

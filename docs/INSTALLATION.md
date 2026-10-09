@@ -1,22 +1,19 @@
 # Ubuntu installer and updates
 
-Release **0.3.1** provides printer and material selection, saved material profiles,
-model placement/copies, supports, sliced-layer preview and verified PM4N/G-code export.
-See `WORKSPACE_0_3.md`. Firmware and material settings remain physically unqualified.
-
-PrusaSlicer **2.9.4** and UVTools core **7.0.1** must already be installed. The application
-reports missing/mismatched engines; it does not download them during offline use. The
-reference workstation has these engines installed. Other machines need a separate engine
-installation before slicing; this release is not a complete air-gapped engine bundle.
+Release **0.5.0** adds native hollow/drain preparation and a complete engine bundle
+for **Ubuntu 26.04 amd64**. Install one Seesaw package; PrusaSlicer, UVTools, .NET,
+Python and the desktop runtime are included. No separate engine installation or
+startup downloads are needed for baseline slicing. Firmware, resin settings and
+physical printer/material qualification remain open. See `SINGLE_APP_0_5.md`.
 
 ## Install and launch
 
-Download `progretech-seesaw_0.3.1_amd64.deb` from the project's
-[GitHub releases](https://github.com/eabdiel/ProgreTech-Seesaw/releases).
+Download `progretech-seesaw_0.5.0_amd64.deb` from the project's
+[GitHub releases](https://github.com/progretech-llc/ProgreTech-Seesaw/releases).
 Open it with Ubuntu's package installer, or run:
 
 ```bash
-sudo apt install ./progretech-seesaw_0.3.1_amd64.deb
+sudo apt install ./progretech-seesaw_0.5.0_amd64.deb
 ```
 
 Find **ProgreTech Seesaw** in the Ubuntu application launcher. The terminal command
@@ -26,8 +23,7 @@ System graphics libraries and PolicyKit are declared package dependencies. A nor
 Ubuntu desktop generally already has them; initial installation may need apt to
 fetch missing system packages. No pip downloads or account login happen on launch.
 
-The first package is tested on Ubuntu 26.04.1 amd64 through X11/XWayland. Ubuntu 24.04
-is a compatibility target, not a tested claim. Native Wayland/headless VTK remains
+The reference desktop is tested on Ubuntu 26.04.1 amd64 through X11/XWayland. This build uses the Ubuntu 26 glibc ABI; Ubuntu 24.04 is not supported. Native Wayland/headless VTK remains
 unqualified. CUDA and a model download are not required.
 
 ## Check for updates
@@ -74,7 +70,7 @@ From a clean checkout with uv-managed Python 3.12:
 
 ```bash
 uv sync --python 3.12 --extra desktop --extra dev --locked
-uv run python tools/build_deb.py --work /path/to/fresh/build --output /path/to/deliverables
+uv run python tools/build_deb.py --engines /path/to/prepared/engines --work /path/to/fresh/build --output /path/to/deliverables
 ```
 
 The build uses locked wheel hashes, preserves their license files and bundles the

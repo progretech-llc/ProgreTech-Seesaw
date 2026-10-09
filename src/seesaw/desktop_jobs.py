@@ -45,6 +45,10 @@ class SliceWorker(QThread):
                 value / 2 for value in printer.build_mm[:2]
             ]
             if printer.technology == "resin":
+                from seesaw.hollowing import placed_holes
+
+                holes = tuple(h for transform in (project.transform, *project.copies)
+                              for h in placed_holes(mesh, transform, project.hollowing.holes))
                 manifest = run_pipeline(
                     source,
                     directory,
@@ -53,6 +57,8 @@ class SliceWorker(QThread):
                     self.progress.emit,
                     center=center,
                     repair_single_pixels=project.repair_single_pixels,
+                    hollowing=project.hollowing,
+                    drain_holes=holes,
                 )
             else:
                 from seesaw.fdm import run_fdm

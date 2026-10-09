@@ -11,6 +11,7 @@ from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
 from seesaw.fdm_settings import FDMSettings
+from seesaw.hollowing import Hollowing
 from seesaw.pipeline import PipelineError, Settings
 from seesaw.profiles import MaterialProfile, printer_by_id
 
@@ -112,6 +113,7 @@ class Project:
     material: MaterialProfile | None = None
     printer_revision: int = 1
     repair_single_pixels: bool = False
+    hollowing: Hollowing = Hollowing()
 
     def __post_init__(self):
         if not isinstance(self.model_path, Path) or not self.model_path.is_absolute():
@@ -148,6 +150,10 @@ class Project:
             raise ValueError("Repair choice must be boolean.")
         if self.repair_single_pixels and printer.technology != "resin":
             raise ValueError("Pixel repair is only available for resin printers.")
+        if type(self.hollowing) is not Hollowing:
+            raise ValueError("Invalid hollowing record.")
+        if self.hollowing.enabled and printer.technology != "resin":
+            raise ValueError("Hollowing is available only for resin printers.")
         checked_settings(self.settings)
 
     def edited(self, **changes):
@@ -161,7 +167,7 @@ class Project:
 
     def to_dict(self):
         return {
-            "schema": "version3",
+            "schema": "version4",
             "model_path": str(self.model_path),
             "model_sha256": self.model_sha256,
             "transform": self.transform.to_dict(),
@@ -172,6 +178,7 @@ class Project:
             "material": self.material.to_dict() if self.material else None,
             "printer_revision": self.printer_revision,
             "repair_single_pixels": self.repair_single_pixels,
+            "hollowing": self.hollowing.to_dict(),
         }
 
     def fingerprint(self):
@@ -219,6 +226,11 @@ class Project:
                 ),
             )
             data = dict(data, schema="version3", repair_single_pixels=False)
+        if type(data) is dict and data.get("schema") == "version3":
+            exact_keys(data, ("schema", "model_path", "model_sha256", "transform", "settings",
+                              "revision", "printer_id", "copies", "material",
+                              "printer_revision", "repair_single_pixels"))
+            data = dict(data, schema="version4", hollowing=Hollowing().to_dict())
         exact_keys(
             data,
             (
@@ -233,9 +245,10 @@ class Project:
                 "material",
                 "printer_revision",
                 "repair_single_pixels",
+                "hollowing",
             ),
         )
-        if data["schema"] != "version3":
+        if data["schema"] != "version4":
             raise ValueError("Unsupported project schema.")
         if type(data["model_path"]) is not str:
             raise ValueError("Model path must be a string.")
@@ -259,6 +272,7 @@ class Project:
             MaterialProfile.from_dict(data["material"]) if data["material"] is not None else None,
             data["printer_revision"],
             data["repair_single_pixels"],
+            Hollowing.from_dict(data["hollowing"]),
         )
 
     @classmethod

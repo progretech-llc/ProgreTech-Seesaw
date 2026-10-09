@@ -1,14 +1,18 @@
+> **0.5.0 preparation:** native hollow/drain editing and one Seesaw installer for
+> Ubuntu 26.04 amd64. See [single-app workflow](docs/SINGLE_APP_0_5.md).
+> Physical printer/material acceptance remains separate.
+
 # ProgreTech Seesaw — offline 3D printing software for Ubuntu
 
 Offline 3D printing software for Ubuntu/Linux: Python workspace with PrusaSlicer and UVTools, resin/FDM profiles, and experimental image-to-3D.
 
 A project of **[ProgreTech LLC](https://progretech.com)**, owned and maintained by **Ed Rodriguez**. Third-party components and contributions retain their respective ownership and notices.
 
-[Project website](https://progretech.com) · [Report an issue](https://github.com/eabdiel/ProgreTech-Seesaw/issues) · [Contribute](CONTRIBUTING.md)
+[Project website](https://progretech.com) · [Report an issue](https://github.com/progretech-llc/ProgreTech-Seesaw/issues) · [Contribute](CONTRIBUTING.md)
 
-Built by **[ProgreTech](https://progretech.com)** · [Download releases](https://github.com/eabdiel/ProgreTech-Seesaw/releases) · [Technical specification](docs/TECHNICAL_SPEC.md)
+Built by **[ProgreTech](https://progretech.com)** · [Download releases](https://github.com/progretech-llc/ProgreTech-Seesaw/releases) · [Technical specification](docs/TECHNICAL_SPEC.md)
 
-A Python-driven, offline slicing workspace for Ubuntu. **Version 0.4.0** supports
+A Python-driven, offline slicing workspace for Ubuntu. **Version 0.5.0** supports
 software-tested Anycubic Photon Mono 4 resin and Original Prusa i3 MK3S/MK3S+ filament
 workflows. Neither printer/material combination is physically qualified by this project.
 
@@ -48,7 +52,7 @@ See the [technical specification](docs/TECHNICAL_SPEC.md),
 ## Development setup
 
 For the Ubuntu launcher installation, use the `.deb` from
-[GitHub Releases](https://github.com/eabdiel/ProgreTech-Seesaw/releases).
+[GitHub Releases](https://github.com/progretech-llc/ProgreTech-Seesaw/releases).
 See [installation and manual self-updates](docs/INSTALLATION.md).
 The desktop's **Check for updates** button checks published releases only when clicked.
 The installer includes the Python desktop runtime. Native slicer engines are separate prerequisites.
