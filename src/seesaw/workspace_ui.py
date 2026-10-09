@@ -215,6 +215,7 @@ class WorkspaceControls:
 
         self.pixel_repair.setVisible(printer.technology == "resin")
         self.hollow_button.setVisible(resin)
+        self.smart_slice.setVisible(resin)
         self.test_button.setText("Load resin test" if resin else "Load FDM test")
         self.setWindowTitle(f"ProgreTech Seesaw {__version__} — {printer.name}")
 
@@ -517,7 +518,9 @@ class WorkspaceControls:
             return
         old = self.undo_stack.pop()
         self.project = self.project.edited(
-            transform=old.transform, copies=old.copies, hollowing=old.hollowing
+            transform=old.transform, copies=old.copies, hollowing=old.hollowing,
+            settings=old.settings, repair_single_pixels=old.repair_single_pixels,
+            auto_exposure=old.auto_exposure
         )
         self.invalidate_result()
         self.sync_controls()

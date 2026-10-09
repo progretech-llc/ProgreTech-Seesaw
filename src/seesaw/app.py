@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 from pyvistaqt import QtInteractor
 
 from seesaw import __version__
-from seesaw.desktop_jobs import ExportWorker, PreviewWorker, SliceWorker
+from seesaw.desktop_jobs import ExportWorker, PreviewWorker, SliceWorker, SmartSliceWorker
 from seesaw.fdm import GCodePreview
 from seesaw.geometry import prepare_mesh
 from seesaw.model import load_stl
@@ -250,6 +250,12 @@ class Window(WorkspaceControls, QMainWindow):
         self.slice = QPushButton("Slice and validate")
         self.slice.clicked.connect(self.start_slice)
         actions.addWidget(self.slice)
+        self.smart_slice = QPushButton("Smart slice")
+        self.smart_slice.setToolTip(
+            "Try native supports and bounded tilts; validate before accepting."
+        )
+        self.smart_slice.clicked.connect(lambda: self.start_slice(smart=True))
+        actions.addWidget(self.smart_slice)
         self.cancel = QPushButton("Cancel job")
         self.cancel.setEnabled(False)
         self.cancel.clicked.connect(self.cancel_slice)
@@ -373,6 +379,7 @@ class Window(WorkspaceControls, QMainWindow):
             self.pixel_repair,
             self.hollow_button,
             self.slice,
+            self.smart_slice,
             self.printer_box,
             self.material_box,
             self.save_material_button,
@@ -390,7 +397,7 @@ class Window(WorkspaceControls, QMainWindow):
         self.layer_slider.setEnabled(enabled and self.layer_preview is not None)
         self.save_project_button.setEnabled(enabled and self.project is not None)
 
-    def start_slice(self):
+    def start_slice(self, smart=False):
         if self.project is None or self.busy():
             return
         self.transform_model()
@@ -414,20 +421,52 @@ class Window(WorkspaceControls, QMainWindow):
             ) / str(uuid.uuid4())
             self.job_directory = root
             self.job_details.setEnabled(True)
-            self.slice_worker = SliceWorker(self.project, root, self)
+            worker = SmartSliceWorker if smart else SliceWorker
+            self.slice_worker = worker(self.project, root, self)
             self.slice_worker.progress.connect(
                 lambda stage: self.status.setText(f"Working: {stage}…")
             )
-            self.slice_worker.succeeded.connect(
-                lambda directory, manifest: self.slice_complete(snapshot, directory, manifest)
-            )
-            self.slice_worker.failed.connect(self.slice_failed)
+            if smart:
+                self.slice_worker.succeeded.connect(
+                    lambda directory, manifest, selected: self.smart_complete(
+                        snapshot, directory, manifest, selected
+                    )
+                )
+                self.slice_worker.diagnostic_failed.connect(self.smart_failed)
+            else:
+                self.slice_worker.succeeded.connect(
+                    lambda directory, manifest: self.slice_complete(snapshot, directory, manifest)
+                )
+                self.slice_worker.failed.connect(self.slice_failed)
             self.slice_worker.finished.connect(self.slice_finished)
             self.job_controls(False)
             self.slice_active = True
             self.slice_worker.start()
         except (OSError, ValueError) as exc:
             self.slice_failed(str(exc))
+
+    def smart_failed(self, message, directory):
+        if directory is not None:
+            self.job_directory = directory
+        self.slice_failed(message)
+        if "could not resolve layer issues" in message:
+            self.inspect_failed_layers()
+
+    def smart_complete(self, snapshot, directory, manifest, selected):
+        if (manifest.get("status") != "software_validated_not_print_qualified"
+                or not self.gate.finish(self.project, snapshot)):
+            self.slice_failed("Inputs changed or Smart slice did not validate.")
+            return
+        self.undo_stack.append(self.project)
+        self.project = selected
+        self.sync_controls()
+        self.render_model()
+        self.job_directory = directory.parent
+        self.slice_complete(self.gate.begin(selected), directory, manifest)
+        if self.candidate is not None:
+            delta = manifest["smart_slice"]["rotation_delta_deg"]
+            self.status.setText("Smart slice: supports enabled; tilt " + str(delta)
+                                + ". " + self.status.text())
 
     def slice_finished(self):
         self.slice_active = False
@@ -472,7 +511,10 @@ class Window(WorkspaceControls, QMainWindow):
         try:
             manifest = json.loads((directory / "manifest.json").read_text())
             count = manifest["layer_count"]
-            self.layer_preview = LayerPreview(directory / "readback.sl1", count)
+            archive = next((directory / name for name in
+                            ("readback.sl1", "repaired.sl1", "layers.sl1")
+                            if (directory / name).is_file()), directory / "readback.sl1")
+            self.layer_preview = LayerPreview(archive, count)
             from seesaw.issues import parse_islands
 
             try:

@@ -123,3 +123,35 @@ def test_bad_decoded_metadata_removes_candidate(tmp_path, monkeypatch):
     assert not (job / "candidate.pm4n").exists()
     assert not (job / ".pending.pm4n").exists()
     assert json.loads((job / "manifest.json").read_text())["status"] == "failed"
+
+
+def test_smart_preflight_blocks_large_islands_before_encoding(tmp_path, monkeypatch):
+    model = tmp_path / "cube.stl"
+    trimesh.creation.box(extents=(1, 1, 1)).export(model)
+    job = tmp_path / "job"
+    stages = []
+    report = "Issues: 1\nIsland, 3, 100px², {X=10,Y=20,Width=10,Height=10}\n"
+    monkeypatch.setattr(pipeline, "discover", lambda: {"prusa_slicer": "prusa", "uvtools": "uv"})
+
+    def fake_run(argv, log, cancel):
+        stages.append(log.stem)
+        if log.stem == "prusa-version":
+            return "PrusaSlicer-2.9.4 test"
+        if log.stem == "uvtools-version":
+            return "7.0.1"
+        if log.stem == "slice":
+            with zipfile.ZipFile(job / "layers.sl1", "w") as archive:
+                for index in range(6):
+                    archive.writestr(f"layer{index:05}.png", b"not used before rejection")
+        if log.stem == "repair-findings":
+            return report
+        return ""
+
+    monkeypatch.setattr(pipeline, "run_process", fake_run)
+    with pytest.raises(pipeline.PipelineError, match="unsupported islands"):
+        pipeline.run_pipeline(model, job, pipeline.Settings(2.5, 25),
+                              repair_single_pixels=True, reject_large_islands_early=True)
+    assert "encode" not in stages and "repair-single-pixels" not in stages
+    assert (job / "issues.log").read_text() == report
+    assert json.loads((job / "manifest.json").read_text())["layer_count"] == 6
+    assert not (job / "candidate.pm4n").exists()

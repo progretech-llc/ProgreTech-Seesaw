@@ -1,6 +1,7 @@
-> **0.5.1 preparation:** native hollow/drain editing and one Seesaw installer for
+> **0.5.2 preparation:** native hollow/drain editing and one Seesaw installer for
 > Ubuntu 26.04 amd64. See [single-app workflow](docs/SINGLE_APP_0_5.md) and
 > [Auto exposure and test diagnostics](docs/AUTO_EXPOSURE_0_5_1.md).
+> [Smart slice](docs/SMART_SLICE_0_5_2.md) adds native supports and tries validated tilts.
 > Physical printer/material acceptance remains separate.
 
 # ProgreTech Seesaw — offline 3D printing software for Ubuntu
@@ -13,7 +14,7 @@ A project of **[ProgreTech LLC](https://progretech.com)**, owned and maintained 
 
 Built by **[ProgreTech](https://progretech.com)** · [Download releases](https://github.com/progretech-llc/ProgreTech-Seesaw/releases) · [Technical specification](docs/TECHNICAL_SPEC.md)
 
-A Python-driven, offline slicing workspace for Ubuntu. **Version 0.5.1** supports
+A Python-driven, offline slicing workspace for Ubuntu. **Version 0.5.2** supports
 software-tested Anycubic Photon Mono 4 resin and Original Prusa i3 MK3S/MK3S+ filament
 workflows. Neither printer/material combination is physically qualified by this project.
 
@@ -30,10 +31,11 @@ quantized weights, a CUDA-free image-relief fallback, and optional local LLM pro
 intake through OpenClaw + Tailscale. See [setup, tested hardware and limitations](docs/EXPERIMENTAL_GENERATION.md).
 
 PrusaSlicer **2.9.4** is required; Mono 4 additionally requires UVTools core **7.0.1**.
-These engines are installed separately. The current workspace handles one source STL
+The Ubuntu 26.04 amd64 Seesaw installer includes these engines. The current workspace handles one source STL
 with up to 32 independently transformed instances. Resin jobs remain limited to 512
-layers and a conservative RAM admission check. Automatic orientation and hollow/drain
-editing are still under development. Start hardware testing with calibration geometry.
+layers and a conservative RAM admission check. Smart slice tries a bounded set of
+orientations with native supports; native hollow/drain editing is available. Start hardware
+testing with calibration geometry.
 See [backend validation](docs/BACKEND_VALIDATION.md).
 
 The intended production pipeline is:
