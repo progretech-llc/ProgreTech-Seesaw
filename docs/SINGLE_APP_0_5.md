@@ -64,6 +64,16 @@ provenance/notices. It rejects archive path traversal, unexpected archive hashes
 missing ELF libraries and missing copyright inventory. Pass the resulting directory
 to `tools/build_deb.py --engines PATH --work FRESH_BUILD --output DELIVERABLES`.
 
+`tools/fetch_uvtools_notices.py --uvtools EXTRACTED_ARCHIVE --output FRESH_NOTICES`
+reads only `UVtoolsCmd.deps.json`, retrieves its 37 exact public NuGet packages,
+and retains package metadata, hashes, source references and concrete license text.
+Provide those notices with the engine/.NET notices to the bundle builder. The
+CLI subset includes files declared in that dependency map, published CLI entry
+points/configuration, and the explicitly loaded `libcvextern.so`; it removes the
+unused external GUI. The optional old-ABI tracing provider is excluded. All excluded
+files retain their original checksums in the manifest. The builder probes actual
+PrusaSlicer and UVTools versions rather than accepting a supplied version label.
+
 The accompanying source bundle and manifest include Seesaw, exact engine source
 archives, source package metadata, native build recipe and component source-access
 references. Qt/Python/wheel notices remain in the installed package. Redistribution

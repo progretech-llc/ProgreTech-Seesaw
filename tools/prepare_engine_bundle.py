@@ -32,10 +32,20 @@ def write(path, text, mode=0o644):
 
 
 def probe_versions(root):
-    prusa = subprocess.run([str(root / "bin/prusa-slicer"), "--help"],
-                           capture_output=True, text=True, check=True, timeout=60)
-    uv = subprocess.run([str(root / "bin/UVtoolsCmd"), "--core-version"],
-                        capture_output=True, text=True, check=True, timeout=60)
+    prusa = subprocess.run(
+        [str(root / "bin/prusa-slicer"), "--help"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    uv = subprocess.run(
+        [str(root / "bin/UVtoolsCmd"), "--core-version"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
     if not re.match(r"^PrusaSlicer-2\.9\.4(?:[+ -]|$)", prusa.stdout):
         raise ValueError("PrusaSlicer actual binary version is outside the qualified pin.")
     if uv.stdout.strip() != "7.0.1":
@@ -73,21 +83,55 @@ def main():
             if (entry.external_attr >> 16) & 0o170000 == 0o120000:
                 raise SystemExit("Upstream archive symlink requires explicit review.")
         archive.extractall(uv)
-    # Optional LTTng event-tracing provider targets an old UST ABI. It is not
-    # required by the CLR or codecs; do not ship an unresolved optional ELF.
+    # Reuse only the published CLI deployment closure; Seesaw does not expose
+    # the external UVTools GUI or need its Avalonia/diagnostic libraries.
+    dependency_map = json.loads((uv / "UVtoolsCmd.deps.json").read_text())
+    keep = {
+        "UVtoolsCmd",
+        "UVtoolsCmd.dll",
+        "UVtoolsCmd.deps.json",
+        "UVtoolsCmd.runtimeconfig.json",
+        "LICENSE",
+        "build-runtime.json",
+        # Published Emgu CV native codec is loaded by name at runtime and is
+        # not represented in the managed package dependency map.
+        "libcvextern.so",
+    }
+    for target in dependency_map["targets"].values():
+        for library in target.values():
+            for kind in ("runtime", "native", "resources", "runtimeTargets"):
+                for filename in library.get(kind, {}):
+                    # Official Linux deployment flattens lib/runtimes paths;
+                    # localized resource DLLs retain their culture directory.
+                    locale = library.get(kind, {}).get(filename, {}).get("locale")
+                    relative = (
+                        str(Path(locale) / Path(filename).name) if locale else Path(filename).name
+                    )
+                    if (uv / relative).is_file():
+                        keep.add(relative)
+    exclusions = {}
+    for path in list(uv.rglob("*")):
+        if path.is_file() and str(path.relative_to(uv)) not in keep:
+            exclusions[str(path.relative_to(uv))] = digest(path)
+            path.unlink()
+    # LTTng event-tracing is optional and targets an incompatible old UST ABI.
     trace = uv / "libcoreclrtraceptprovider.so"
-    exclusions = {trace.name: digest(trace)}
-    trace.unlink()
-    for name in ("UVtools", "UVtoolsCmd"):
-        (uv / name).chmod(0o755)
+    if trace.is_file():
+        exclusions[trace.name] = digest(trace)
+        trace.unlink()
+    (uv / "UVtoolsCmd").chmod(0o755)
     libraries = root / "lib"
     libraries.mkdir()
     inventory = []
     seen = set()
     roots = [binary, uv / "UVtoolsCmd", *uv.glob("*.so")]
     for executable in roots:
-        output = subprocess.run(["ldd", str(executable)], text=True, capture_output=True,
-                                env={**os.environ, "LD_LIBRARY_PATH": str(uv)})
+        output = subprocess.run(
+            ["ldd", str(executable)],
+            text=True,
+            capture_output=True,
+            env={**os.environ, "LD_LIBRARY_PATH": str(uv)},
+        )
         # Native upstream .so files only; managed assemblies are not passed to ldd.
         if output.returncode:
             raise SystemExit(f"ELF dependency inspection failed: {executable.name}")
@@ -100,13 +144,21 @@ def main():
             seen.add(source)
             # Bundle all non-glibc linked dependencies. libc and loader form the
             # supported Ubuntu ABI; copying them could break the user's host.
-            package = subprocess.run(["dpkg-query", "-S", str(source)],
-                                     capture_output=True, text=True).stdout.split(": ")[0]
+            package = subprocess.run(
+                ["dpkg-query", "-S", str(source)], capture_output=True, text=True
+            ).stdout.split(": ")[0]
             if not package:
                 raise SystemExit(f"No package provenance for native library {source}")
-            metadata = subprocess.check_output(["dpkg-query", "-W", "-f",
-                "${binary:Package}\t${Version}\t${source:Package}\t${source:Version}", package],
-                text=True).split("\t")
+            metadata = subprocess.check_output(
+                [
+                    "dpkg-query",
+                    "-W",
+                    "-f",
+                    "${binary:Package}\t${Version}\t${source:Package}\t${source:Version}",
+                    package,
+                ],
+                text=True,
+            ).split("\t")
             bundled = not package.startswith("libc6:")
             if bundled:
                 target = libraries / name
@@ -117,32 +169,51 @@ def main():
                 if not copyright_file.is_file():
                     raise SystemExit(f"Missing library copyright notice: {package}")
                 shutil.copy2(copyright_file, libraries / (name + ".copyright"))
-            inventory.append({"soname": name, "sha256": digest(source),
-                              "binary_package": metadata[0], "binary_version": metadata[1],
-                              "source_package": metadata[2], "source_version": metadata[3],
-                              "bundled": bundled,
-                              "source_access": "https://launchpad.net/ubuntu/+source/" +
-                                  metadata[2] + "/" + metadata[3]})
-    for name, path in (("prusa-slicer", "prusa/bin/PrusaSlicer"),
-                       ("UVtoolsCmd", "uvtools/UVtoolsCmd")):
-        write(root / "bin" / name,
-              '#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)\n'
-              'unset LD_PRELOAD LD_AUDIT LD_LIBRARY_PATH DOTNET_ROOT DOTNET_ROOT_X64\n'
-              'export LD_LIBRARY_PATH="$root/lib:$root/uvtools"\n'
-              'export DOTNET_MULTILEVEL_LOOKUP=0\n'
-              f'exec "$root/{path}" "$@"\n', 0o755)
+            inventory.append(
+                {
+                    "soname": name,
+                    "sha256": digest(source),
+                    "binary_package": metadata[0],
+                    "binary_version": metadata[1],
+                    "source_package": metadata[2],
+                    "source_version": metadata[3],
+                    "bundled": bundled,
+                    "source_access": "https://launchpad.net/ubuntu/+source/"
+                    + metadata[2]
+                    + "/"
+                    + metadata[3],
+                }
+            )
+    for name, path in (
+        ("prusa-slicer", "prusa/bin/PrusaSlicer"),
+        ("UVtoolsCmd", "uvtools/UVtoolsCmd"),
+    ):
+        write(
+            root / "bin" / name,
+            '#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)\n'
+            "unset LD_PRELOAD LD_AUDIT LD_LIBRARY_PATH DOTNET_ROOT DOTNET_ROOT_X64\n"
+            'export LD_LIBRARY_PATH="$root/lib:$root/uvtools"\n'
+            "export DOTNET_MULTILEVEL_LOOKUP=0\n"
+            f'exec "$root/{path}" "$@"\n',
+            0o755,
+        )
     shutil.copytree(args.notices, root / "notices")
     shutil.copy2(args.provenance, root / "build-provenance.json")
     versions = probe_versions(root)
     files = {str(p.relative_to(root)): digest(p) for p in sorted(root.rglob("*")) if p.is_file()}
-    manifest = {"schema": 1, "platform": "ubuntu26-amd64",
-                "versions": versions,
-                "executables": {"prusa_slicer": "bin/prusa-slicer", "uvtools": "bin/UVtoolsCmd"},
-                "files": files, "elf_dependencies": inventory,
-                "excluded_optional_files": exclusions,
-                "prusa_native_sha256": digest(binary), "uvtools_archive_sha256": UV_HASH,
-                "prusa_build": "Ubuntu slic3r-prusa 2.9.4+dfsg-4 source; GUI OFF, FHS OFF, "
-                               "STEP OFF, desktop integration OFF; unmodified source algorithms"}
+    manifest = {
+        "schema": 1,
+        "platform": "ubuntu26-amd64",
+        "versions": versions,
+        "executables": {"prusa_slicer": "bin/prusa-slicer", "uvtools": "bin/UVtoolsCmd"},
+        "files": files,
+        "elf_dependencies": inventory,
+        "excluded_optional_files": exclusions,
+        "prusa_native_sha256": digest(binary),
+        "uvtools_archive_sha256": UV_HASH,
+        "prusa_build": "Ubuntu slic3r-prusa 2.9.4+dfsg-4 source; GUI OFF, FHS OFF, "
+        "STEP OFF, desktop integration OFF; unmodified source algorithms",
+    }
     write(root / "manifest.json", json.dumps(manifest, indent=2) + "\n")
     print(root)
 
