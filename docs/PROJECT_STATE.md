@@ -2,9 +2,9 @@
 
 The Python core now stores a single local STL reference, SHA-256, immutable transform,
 explicit resin or filament settings, printer identity/revision and an immutable material
-profile snapshot and typed hollow/drain parameters in version-4 JSON. Up to 31 additional independently transformed
+profile snapshot and typed hollow/drain parameters in version-5 JSON. Up to 31 additional independently transformed
 copies share the source hash. Version-1/2/3 projects migrate with hollowing disabled; reopening never
-restores export readiness. The 0.5.0 desktop uses this API throughout.
+restores export readiness. The 0.5.1 desktop uses this API throughout.
 
 `Project.from_stl_path(path, settings=...)` records source identity; geometry inspection
 still belongs to `model.load_stl`. `save_project` writes a unique temporary file, flushes
@@ -38,3 +38,7 @@ completion, invalidation and reopen without readiness. Desktop integration evide
 
 Single-pixel repair is a boolean preparation choice in project schema version3. It is
 disabled on migration, rejected for FDM, and included in job currency. See LAYER_FINDINGS.md.
+
+Auto exposure choices are persisted separately from resolved numeric settings. See
+[AUTO_EXPOSURE_0_5_1.md](AUTO_EXPOSURE_0_5_1.md) for profile/layer matching and the
+resin-specific geometry test. Digital island failures remain export blockers.

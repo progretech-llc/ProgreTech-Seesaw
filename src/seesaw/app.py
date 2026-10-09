@@ -196,7 +196,7 @@ class Window(WorkspaceControls, QMainWindow):
         right = QVBoxLayout(right_panel)
         right_scroll = QScrollArea()
         right_scroll.setWidgetResizable(True)
-        right_scroll.setMinimumWidth(290)
+        right_scroll.setMinimumWidth(380)
         right_scroll.setWidget(right_panel)
         row.addWidget(right_scroll, 1)
         reset = QPushButton("Reset view")
@@ -207,11 +207,31 @@ class Window(WorkspaceControls, QMainWindow):
         self.bottom_exposure = QDoubleSpinBox()
         for spin, maximum in ((self.exposure, 120), (self.bottom_exposure, 300)):
             spin.setRange(0, maximum)
-            spin.setSpecialValueText("Not set")
+            spin.setSpecialValueText("Auto (material)")
+            spin.setToolTip(
+                "Auto uses this material's saved exposure at its saved layer height. "
+                "Type a positive number for a manual override."
+            )
             spin.setSuffix(" s")
             spin.valueChanged.connect(self.settings_changed)
-        settings_form.addRow("Normal exposure", self.exposure)
-        settings_form.addRow("Bottom exposure", self.bottom_exposure)
+        self.exposure_fields = []
+        self.auto_buttons = []
+        for label, spin in (
+            ("Normal exposure", self.exposure),
+            ("Bottom exposure", self.bottom_exposure),
+        ):
+            field = QWidget()
+            row = QHBoxLayout(field)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.addWidget(spin, 1)
+            auto = QPushButton("Auto")
+            auto.setMaximumWidth(58)
+            auto.setToolTip("Use the selected material profile's saved exposure.")
+            auto.clicked.connect(lambda checked=False, target=spin: target.setValue(0))
+            row.addWidget(auto)
+            self.auto_buttons.append(auto)
+            self.exposure_fields.append(field)
+            settings_form.addRow(label, field)
         self.supports = QCheckBox("Generate supports and raft")
         self.supports.toggled.connect(self.settings_changed)
         settings_form.addRow(self.supports)
@@ -254,6 +274,7 @@ class Window(WorkspaceControls, QMainWindow):
 
     def open_generation(self):
         from seesaw.generation_ui import open_generation
+
         open_generation(self)
 
     def open_model(self):
@@ -347,6 +368,7 @@ class Window(WorkspaceControls, QMainWindow):
             self.undo,
             self.exposure,
             self.bottom_exposure,
+            *self.auto_buttons,
             self.supports,
             self.pixel_repair,
             self.hollow_button,
@@ -374,7 +396,9 @@ class Window(WorkspaceControls, QMainWindow):
         self.transform_model()
         self.invalidate_result()
         if self.project.settings is None:
-            self.status.setText("Enter normal and bottom exposure values for your resin first.")
+            self.status.setText(
+                "Auto needs a matching material/layer profile, or enter both exposures manually."
+            )
             return
         try:
             snapshot = self.gate.begin(self.project)
@@ -426,10 +450,17 @@ class Window(WorkspaceControls, QMainWindow):
     def slice_failed(self, message):
         self.invalidate_result()
         if "UVTools reported issues" in message:
-            message = (
-                "Layer issues found. Try a different orientation or support setup. "
-                "Open job details and inspect pipeline/issues.log."
-            )
+            from seesaw.issues import summarize_issues
+
+            try:
+                report = (self.job_directory / "pipeline/issues.log").read_text()[:65536]
+                message = "Layer issues found. " + summarize_issues(report)
+            except (OSError, ValueError, AttributeError):
+                message = "Layer issues found. Inspect the Layers tab and Job details."
+            if self.project and self.project.settings and not self.project.settings.supports:
+                message += " Supports are off; enable Generate supports and raft, then slice again."
+            else:
+                message += " Review the highlighted layers and adjust supports or orientation."
         self.status.setText(f"No export available: {message}")
         if "Layer issues found" in message:
             self.inspect_failed_layers()
@@ -455,7 +486,7 @@ class Window(WorkspaceControls, QMainWindow):
                 )
             self.finding_box.blockSignals(False)
             self.layer_slider.setRange(0, count - 1)
-            self.layer_slider.setValue(0)
+            self.layer_slider.setValue(findings[0].layer if findings else 0)
             self.layer_slider.setEnabled(True)
             self.tabs.setCurrentIndex(1)
             self.request_layer()

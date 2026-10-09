@@ -55,7 +55,7 @@ def test_hollowing_roundtrip_migration_and_stale_gate(tmp_path):
     assert Project.from_dict(new.to_dict()) == new
     legacy = old.to_dict()
     legacy["schema"] = "version3"
-    del legacy["hollowing"]
+    del legacy["hollowing"], legacy["auto_exposure"]
     assert not Project.from_dict(legacy).hollowing.enabled
     legacy["hollowing"] = hollowing.to_dict()
     with pytest.raises(ValueError):

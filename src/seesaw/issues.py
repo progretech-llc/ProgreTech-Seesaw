@@ -100,3 +100,21 @@ def verify_repair(before_path, after_path, islands, count, cancel, progress=lamb
     if seen != targets:
         raise ValueError("Repair did not remove exactly the reported singleton islands.")
     return {"removed_pixels": len(seen), "points": sorted(seen), "verified_layers": count}
+
+
+def summarize_issues(report):
+    """Human summary only; never changes native acceptance or repair policy."""
+    totals = re.findall(r"^Issues: (\d+)\s*$", report, re.MULTILINE)
+    if len(totals) != 1 or int(totals[0]) < 1:
+        raise ValueError("Missing native findings.")
+    matches = re.findall(r"^Island, (\d+), (\d+)px²,", report, re.MULTILINE)
+    if len(matches) == int(totals[0]):
+        layer, pixels = map(int, matches[0])
+        return (
+            f"{totals[0]} unsupported island(s); first on layer {layer + 1}, "
+            f"{pixels:,} pixels. Exposure changes do not resolve unsupported geometry."
+        )
+    kinds = sorted(set(re.findall(r"^([A-Za-z]+), ", report, re.MULTILINE)))
+    return (
+        f"{totals[0]} finding(s): {', '.join(kinds) or 'unrecognized type'}. Inspect Job details."
+    )
