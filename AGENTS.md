@@ -1,6 +1,6 @@
 # ProgreTech Seesaw
 
-Repository: `/mnt/PT-Storage/Projects/ProgreTech-Seesaw`.
+Repository: `/mnt/PT-Storage/Projects/development/factory-alt/pt-progretech-seesaw-factory-alt-dev`.
 Canonical product memory project: `ProgreTech-Seesaw`; use your runtime identity.
 Follow `/mnt/PT-Storage/Projects/AGENTS.md` and use the official Hindsight integration with your assigned identity.
 
